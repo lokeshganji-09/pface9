@@ -1,0 +1,329 @@
+import cv2
+import os
+import numpy as np
+import pickle
+import time
+from kivy.app import App
+from kivy.uix.button import Button
+from kivy.uix.label import Label
+from kivy.uix.boxlayout import BoxLayout
+from kivy.uix.textinput import TextInput
+from kivy.uix.popup import Popup
+from kivy.uix.screenmanager import ScreenManager, Screen
+from kivy.clock import Clock
+
+# Define paths and setup
+captured_faces_folder = 'captured_faces'
+recognizer = cv2.face.LBPHFaceRecognizer_create()
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+
+# Ensure the folder for captured faces exists
+if not os.path.exists(captured_faces_folder):
+    os.makedirs(captured_faces_folder)
+
+# Global variable to track the name entered for capturing faces
+capture_count = 0
+
+# Main Screen with buttons and layout
+class MainScreen(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        
+        # Main layout with vertical orientation (so everything will be stacked vertically)
+        self.layout = BoxLayout(orientation='vertical', padding=[50,50,50,50])
+        
+        # Info label at the top
+        self.info_label = Label(text="Welcome to Face Recognition System", halign="center", valign="middle", font_size="50sp")
+        
+        # Add the info label to the layout
+        self.layout.add_widget(self.info_label)
+        
+        # Horizontal layout for buttons
+        button_layout = BoxLayout(orientation='horizontal')
+        
+        # Capture button
+        self.capture_button = Button(text="Capture Face", size_hint=(1, 0.1), background_color=(1,0,0,1))
+        self.capture_button.bind(on_press=self.on_capture_button_click)
+        button_layout.add_widget(self.capture_button)
+        
+        # Train button
+        self.train_button = Button(text="Train Recognizer", size_hint=(1, 0.1), background_color=(0,1,0,1))
+        self.train_button.bind(on_press=self.on_train_button_click)
+        button_layout.add_widget(self.train_button)
+        
+        # Recognize button
+        self.recognize_button = Button(text="Start Recognition", size_hint=(1, 0.1), background_color=(1,0.5,0,1))
+        self.recognize_button.bind(on_press=self.on_recognize_button_click)
+        button_layout.add_widget(self.recognize_button)
+        
+        # Add the button layout below the label
+        self.layout.add_widget(button_layout)
+        
+        # Add the entire layout to the screen
+        self.add_widget(self.layout)
+    
+    def on_capture_button_click(self, instance):
+        # Once the Capture button is clicked, we add the TextInput field to the layout
+        self.layout.clear_widgets()  # Clear existing widgets
+        
+        # Add back the info label
+        self.layout.add_widget(self.info_label)
+        
+        # Create the text input field for name
+        self.text_input = TextInput(hint_text="Enter your name for capture", size_hint=(1, 0.1))
+        self.layout.add_widget(self.text_input)
+
+        # Create the Start Capture button
+        self.capture_button = Button(text="Start Capture", size_hint=(1, 0.1),background_color=(0,1,0,1))
+        self.capture_button.bind(on_press=self.start_capture)
+        self.layout.add_widget(self.capture_button)
+
+        
+    def start_capture(self, instance):
+        # Get the name entered in the TextInput widget'''
+        name = self.text_input.text.strip()
+        if name:
+            # Pass the name to the CaptureScreen and switch screen
+            capture_screen = self.manager.get_screen('capture_screen')
+            capture_screen.start_capture(name)
+            self.manager.current = 'capture_screen'
+        else:
+            self.show_popup("Error", "Please enter a name to proceed.")
+    
+    def on_train_button_click(self, instance):
+        self.manager.current = 'train_screen'
+        train_screen = self.manager.get_screen('train_screen')
+        train_screen.start_training()
+    
+    def on_recognize_button_click(self, instance):
+        self.manager.current = 'recognize_screen'
+        recognize_screen = self.manager.get_screen('recognize_screen')
+        recognize_screen.start_recognition()
+    
+    def show_popup(self, title, message):
+        popup = Popup(title=title, content=Label(text=message), size_hint=(None, None), size=(400, 200))
+        popup.open()
+    def restore_main_buttons(self):
+        """
+        Restore the main screen layout with buttons after capture or any other screen.
+        """
+        # Re-create the button layout
+        self.layout.clear_widgets()  # Clear previous layout content
+        
+        # Add back the info label
+        self.layout.add_widget(self.info_label)
+
+        # Re-create button layout with buttons
+        button_layout = BoxLayout(orientation='horizontal')
+        
+        # Capture button
+        self.capture_button = Button(text="Capture Face", size_hint=(1, 0.1), background_color=(1, 0, 0, 1))
+        self.capture_button.bind(on_press=self.on_capture_button_click)
+        button_layout.add_widget(self.capture_button)
+        
+        # Train button
+        self.train_button = Button(text="Train Recognizer", size_hint=(1, 0.1), background_color=(0, 1, 0, 1))
+        self.train_button.bind(on_press=self.on_train_button_click)
+        button_layout.add_widget(self.train_button)
+        
+        # Recognize button
+        self.recognize_button = Button(text="Start Recognition", size_hint=(1, 0.1), background_color=(1, 0.5, 0, 1))
+        self.recognize_button.bind(on_press=self.on_recognize_button_click)
+        button_layout.add_widget(self.recognize_button)
+        
+        # Add the button layout to the screen
+        self.layout.add_widget(button_layout)
+
+
+        
+# Capture Screen for capturing faces
+class CaptureScreen(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.layout = BoxLayout(orientation='vertical')
+
+
+        self.info_label = Label(text="Capturing Faces...", size_hint=(1, 0.1))
+        self.layout.add_widget(self.info_label)
+        
+        '''self.capture_button = Button(text="Start Capture", size_hint=(1, 0.1))
+        self.capture_button.bind(on_press=self.start_capture)
+        self.layout.add_widget(self.capture_button)'''
+        
+        self.close_button = Button(text="Close", size_hint=(1, 0.1), background_color=(1,0,0,1))
+        self.close_button.bind(on_press=self.close_capture)
+        self.layout.add_widget(self.close_button)
+        
+        self.add_widget(self.layout)
+
+    def start_capture(self, name):
+        self.capture_count = 0
+        self.capture_face(name)
+
+    def capture_face(self, name, capture_count=4):
+        cap = cv2.VideoCapture(0)  # Open the default camera
+        if not cap.isOpened():
+            self.info_label.text = "Error: Could not open camera."
+            print("Error: Could not open camera.")
+            return
+
+        count = 0
+        while count < capture_count:
+            ret, frame = cap.read()
+            if not ret:
+                break
+
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+
+            if len(faces) > 0:
+                for (x, y, w, h) in faces:
+                    roi_gray = gray[y:y + h, x:x + w]
+                    cv2.imwrite(f"{captured_faces_folder}/{name}_{count}.jpg", roi_gray)
+                    count += 1
+                    self.info_label.text = f"Captured {count}/{capture_count} face images."
+            
+            time.sleep(2)  # Simulate waiting for next face direction
+
+        cap.release()
+        self.info_label.text = "Capture completed. Press Close to go back."
+        self.info_label.color = (1, 0.5, 0, 1)
+
+        print("Capture completed.")
+
+    def close_capture(self, instance):
+        self.manager.current = 'main_screen'
+        main_screen = self.manager.get_screen('main_screen')
+        main_screen.restore_main_buttons()
+
+# Training Screen for training the recognizer
+class TrainScreen(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.layout = BoxLayout(orientation='vertical')
+        
+        self.info_label = Label(text="Training Recognizer...", size_hint=(1, 0.1))
+        self.layout.add_widget(self.info_label)
+        
+        self.close_button = Button(text="Close", size_hint=(1, 0.1), background_color=(1,0,0,1))
+        self.close_button.bind(on_press=self.close_training)
+        self.layout.add_widget(self.close_button)
+        
+        self.add_widget(self.layout)
+
+    def start_training(self):
+        self.train_recognizer()
+
+    def train_recognizer(self):
+        faces = []
+        labels = []
+        name_to_id = {}
+        current_label = 0
+
+        # Reading captured face images
+        for filename in os.listdir(captured_faces_folder):
+            if filename.endswith('.jpg'):
+                name = filename.split('_')[0]
+                if name not in name_to_id:
+                    name_to_id[name] = current_label
+                    current_label += 1
+
+                img = cv2.imread(f'{captured_faces_folder}/{filename}')
+                gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+                faces_detected = face_cascade.detectMultiScale(gray)
+                
+                for (x, y, w, h) in faces_detected:
+                    roi_gray = gray[y:y + h, x:x + w]
+                    faces.append(roi_gray)
+                    labels.append(name_to_id[name])
+
+        # Train the recognizer
+        recognizer.train(faces, np.array(labels))
+
+        # Save the trained model
+        recognizer.save('face_recognizer.yml')
+        with open('name_to_id.pkl', 'wb') as f:
+            pickle.dump(name_to_id, f)
+
+        self.info_label.text = "Training complete. Press Close to go back."
+        self.info_label.color = (1, 0.5, 0, 1)
+
+    def close_training(self, instance):
+        self.manager.current = 'main_screen'
+
+# Recognizing Screen for face recognition
+class RecognizeScreen(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.layout = BoxLayout(orientation='vertical')
+
+        # OpenCV for frame capture
+        self.cap = cv2.VideoCapture(0)  # Open the default camera
+        if not self.cap.isOpened():
+            self.info_label = Label(text="Failed to open camera for recognition!", size_hint=(1, 0.1))
+            self.layout.add_widget(self.info_label)
+            return
+
+        self.info_label = Label(text="Thank You..Glad To meet You", size_hint=(1, 0.1))
+        self.info_label.color = (1, 0.5, 0, 1)
+        self.layout.add_widget(self.info_label)
+        self.close_button = Button(text="Close", size_hint=(1, 0.1), background_color=(1,0,0,1))
+        self.close_button.bind(on_press=self.close_recognition)
+        self.layout.add_widget(self.close_button)
+        self.add_widget(self.layout)
+
+    def start_recognition(self):
+        self.recognize_face()
+
+    def recognize_face(self):
+        recognizer.read('face_recognizer.yml')
+        with open('name_to_id.pkl', 'rb') as f:
+            name_to_id = pickle.load(f)
+
+        while True:
+            ret, frame = self.cap.read()
+            if not ret or frame is None:
+                break
+
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            faces = face_cascade.detectMultiScale(gray)
+
+            for (x, y, w, h) in faces:
+                roi_gray = gray[y:y + h, x:x + w]
+                label, confidence = recognizer.predict(roi_gray)
+
+                if confidence < 100:
+                    name = list(name_to_id.keys())[list(name_to_id.values()).index(label)]
+                else:
+                    name = "Unknown"
+
+                cv2.putText(frame, name, (x, y - 10), cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 0), 2)
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+
+            cv2.imshow("Face Recognition", frame)
+
+            if cv2.waitKey(1) & 0xFF == ord('q'):
+                break
+
+        self.cap.release()
+        cv2.destroyAllWindows()
+
+    def close_recognition(self, instance):
+        self.manager.current = 'main_screen'
+
+
+
+# Main Kivy App
+class FaceRecognitionApp(App):
+    def build(self):
+        sm = ScreenManager()
+        sm.add_widget(MainScreen(name='main_screen'))
+        sm.add_widget(CaptureScreen(name='capture_screen'))
+        sm.add_widget(TrainScreen(name='train_screen'))
+        sm.add_widget(RecognizeScreen(name='recognize_screen'))
+    
+
+        return sm
+
+if __name__ == '__main__':
+    FaceRecognitionApp().run()
